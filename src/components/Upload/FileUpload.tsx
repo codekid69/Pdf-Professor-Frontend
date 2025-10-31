@@ -204,7 +204,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
             <Upload className="mx-auto h-10 w-10 sm:h-12 sm:w-12 text-gray-400 mb-4" />
             <div className="space-y-2">
               <p className="text-lg sm:text-xl font-medium text-gray-900">
-                {isDragActive ? 'Drop your Tamil PDFs here' : 'Upload Tamil PDF documents'}
+                {isDragActive ? 'Drop your PDFs here' : 'Upload  PDF documents'}
               </p>
               <p className="text-sm text-gray-600">
                 Drag & drop or click to select PDF files (max 10MB each)
