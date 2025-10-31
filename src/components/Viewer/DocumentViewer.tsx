@@ -189,7 +189,7 @@ ${document.translated_text}`;
     setAnswer('');
     
     try {
-      const response = await fetch('http://localhost:3002/api/document-qna', {
+      const response = await fetch('https://pdf-professor-backend.onrender.com/api/document-qna', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
