@@ -48,7 +48,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleMode, isSignUp }) 
         </CardTitle>
         <CardDescription className="text-gray-600">
           {isSignUp 
-            ? 'Sign up to start processing Tamil PDFs'
+            ? 'Sign up to start processing PDFs'
             : 'Sign in to your account to continue'
           }
         </CardDescription>
