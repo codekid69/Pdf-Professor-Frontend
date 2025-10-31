@@ -37,6 +37,17 @@ export type Database = {
         Insert: Omit<Database['public']['Tables']['parsed_fields']['Row'], 'id' | 'created_at'>;
         Update: Partial<Database['public']['Tables']['parsed_fields']['Insert']>;
       };
+      document_embeddings: {
+        Row: {
+          id: string;
+          document_id: string;
+          content: string;
+          embedding: number[] | null;
+          created_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['document_embeddings']['Row'], 'id' | 'created_at'>;
+        Update: Partial<Database['public']['Tables']['document_embeddings']['Insert']>;
+      };
     };
   };
 };

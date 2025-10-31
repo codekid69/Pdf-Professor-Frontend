@@ -43,7 +43,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleMode, isSignUp }) 
   return (
     <Card className="w-full max-w-md">
       <CardHeader className="text-center">
-        <CardTitle className="text-3xl font-bold text-gray-900">
+        <CardTitle className="text-2xl sm:text-3xl font-bold text-gray-900">
           {isSignUp ? 'Create Account' : 'Welcome Back'}
         </CardTitle>
         <CardDescription className="text-gray-600">
@@ -110,7 +110,14 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleMode, isSignUp }) 
             className="w-full bg-blue-600 hover:bg-blue-700"
             disabled={loading}
           >
-            {loading ? 'Please wait...' : (isSignUp ? 'Create Account' : 'Sign In')}
+            {loading ? (
+              <span className="flex items-center justify-center">
+                <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></span>
+                Please wait...
+              </span>
+            ) : (
+              isSignUp ? 'Create Account' : 'Sign In'
+            )}
           </Button>
 
           <div className="text-center">

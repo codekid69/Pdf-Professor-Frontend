@@ -23,22 +23,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
   const [error, setError] = useState('');
   const { user } = useAuth();
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const newFiles = acceptedFiles.map(file => ({
-      file,
-      progress: 0,
-      status: 'uploading' as const,
-      id: Math.random().toString(36).substr(2, 9),
-    }));
 
-    setUploadFiles(prev => [...prev, ...newFiles]);
-    setError('');
-
-    // Process each file
-    newFiles.forEach(uploadFile => {
-      processFile(uploadFile);
-    });
-  }, []);
 
   const processFile = async (uploadFile: UploadFile) => {
     try {
@@ -51,10 +36,10 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
       
       // Upload to Supabase Storage
       const fileName = `${Date.now()}-${file.name}`;
-      const filePath = `${user.id}/${fileName}`; // Fixed: removed duplicate 'pdfs/'
+      const filePath = `${user.id}/${fileName}`;
 
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('pdfs') // This is the bucket name
+        .from('pdfs')
         .upload(filePath, file);
 
       if (uploadError) throw uploadError;
@@ -63,7 +48,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
       const { data: docData, error: docError } = await supabase
         .from('documents')
         .insert({
-          user_id: user.id, // Fixed: removed non-null assertion
+          user_id: user.id,
           filename: file.name,
           file_path: uploadData.path,
           original_text: '',
@@ -77,7 +62,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
       if (docError) throw docError;
 
       updateFileStatus(id, 'completed');
-      onUploadComplete(docData.id); // Pass the document ID instead of the full document data
+      onUploadComplete(docData.id);
 
       // Trigger backend processing via Express server
       try {
@@ -101,13 +86,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
         
         if (!response.ok) {
           console.error('Backend processing failed:', response.status, response.statusText);
-          // Don't throw error here as the upload itself was successful
         } else {
           console.log('Backend processing successful');
         }
       } catch (fetchError) {
         console.error('Failed to trigger backend processing:', fetchError);
-        // Don't throw error here as the upload itself was successful
       }
 
     } catch (error) {
@@ -137,8 +120,68 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
     setUploadFiles(prev => prev.filter(f => f.id !== id));
   };
 
+  // Function to check PDF page count
+  const checkPdfPageCount = async (file: File): Promise<number> => {
+    try {
+      // Dynamically import pdfjs-dist to avoid issues with server-side rendering
+      const pdfjs = await import('pdfjs-dist');
+      
+      // Set the worker
+      pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      
+      // Read the file as ArrayBuffer
+      const arrayBuffer = await file.arrayBuffer();
+      
+      // Load the PDF document
+      const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+      
+      // Return the number of pages
+      return pdf.numPages;
+    } catch (error) {
+      console.error('Error checking PDF page count:', error);
+      throw new Error('Failed to read PDF file');
+    }
+  };
+
+  // Custom onDrop function to handle page count validation
+  const onDropWithValidation = useCallback(async (acceptedFiles: File[]) => {
+    // Process each file with page count validation
+    for (const file of acceptedFiles) {
+      try {
+        // Check if it's a PDF file
+        if (file.type === 'application/pdf') {
+          // Check the page count
+          const pageCount = await checkPdfPageCount(file);
+          
+          // If more than 2 pages, show error and skip upload
+          if (pageCount > 2) {
+            setError(`File "${file.name}" has ${pageCount} pages, which exceeds the 2-page limit. Please select a document with 2 pages or fewer.`);
+            continue; // Skip this file and process the next one
+          }
+        }
+        
+        // If validation passes, proceed with normal upload process
+        const newFile = {
+          file,
+          progress: 0,
+          status: 'uploading' as const,
+          id: Math.random().toString(36).substr(2, 9),
+        };
+        
+        setUploadFiles(prev => [...prev, newFile]);
+        setError('');
+        
+        // Process the file
+        processFile(newFile);
+      } catch (error) {
+        console.error('Error processing file:', error);
+        setError(`Failed to process file "${file.name}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+  }, [processFile]);
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
+    onDrop: onDropWithValidation,
     accept: {
       'application/pdf': ['.pdf'],
     },
@@ -155,12 +198,12 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
             : 'border-gray-300 hover:border-gray-400'
         }`}
       >
-        <CardContent className="p-8">
+        <CardContent className="p-6 sm:p-8">
           <div {...getRootProps()} className="text-center">
             <input {...getInputProps()} />
-            <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+            <Upload className="mx-auto h-10 w-10 sm:h-12 sm:w-12 text-gray-400 mb-4" />
             <div className="space-y-2">
-              <p className="text-lg font-medium text-gray-900">
+              <p className="text-lg sm:text-xl font-medium text-gray-900">
                 {isDragActive ? 'Drop your Tamil PDFs here' : 'Upload Tamil PDF documents'}
               </p>
               <p className="text-sm text-gray-600">
@@ -189,12 +232,12 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
         <div className="space-y-3">
           <h3 className="text-lg font-medium text-gray-900">Uploading Files</h3>
           {uploadFiles.map((uploadFile) => (
-            <Card key={uploadFile.id} className="p-4">
+            <Card key={uploadFile.id} className="p-3 sm:p-4">
               <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <FileText className="h-5 w-5 text-gray-500" />
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
+                <div className="flex items-center space-x-3 min-w-0">
+                  <FileText className="h-5 w-5 text-gray-500 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
                       {uploadFile.file.name}
                     </p>
                     <p className="text-xs text-gray-500">

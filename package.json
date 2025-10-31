@@ -8,8 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json",
-    "server": "node server.cjs"
+    "typecheck": "tsc --noEmit -p tsconfig.app.json"
+    
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.78.0",
@@ -23,6 +23,7 @@
     "franc": "^6.2.0",
     "lucide-react": "^0.344.0",
     "node-fetch": "^3.3.2",
+    "nodemon": "^3.1.10",
     "p-limit": "^7.2.0",
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "^3.11.174",

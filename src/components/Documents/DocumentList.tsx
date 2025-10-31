@@ -3,12 +3,9 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
-import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { 
   FileText, 
-  Search, 
-  Filter, 
   Eye, 
   Download,
   Clock,
@@ -49,93 +46,71 @@ export const DocumentList: React.FC<DocumentListProps> = ({
   refreshTrigger 
 }) => {
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
-  const [filteredDocuments, setFilteredDocuments] = useState<DocumentRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [searchFilters, setSearchFilters] = useState({
-    buyer: '',
-    seller: '',
-    houseNumber: '',
-    surveyNumber: '',
-    documentNumber: ''
-  });
   const [refreshing, setRefreshing] = useState(false);
   const { user } = useAuth();
+  const [subscription, setSubscription] = useState<any>(null);
 
   const fetchDocuments = useCallback(async () => {
     if (!user) return;
 
     setLoading(true);
     try {
-      // Use the search API endpoint for more advanced searching
-      const response = await fetch(
-        `/api/search-documents?userId=${user.id}&query=${encodeURIComponent(searchQuery)}&buyer=${encodeURIComponent(searchFilters.buyer)}&seller=${encodeURIComponent(searchFilters.seller)}&houseNumber=${encodeURIComponent(searchFilters.houseNumber)}&surveyNumber=${encodeURIComponent(searchFilters.surveyNumber)}&documentNumber=${encodeURIComponent(searchFilters.documentNumber)}`
-      );
-      
-      if (response.ok) {
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          const data = await response.json();
-          setDocuments(data);
-        } else {
-          // If not JSON, fall back to original method
-          throw new Error('Response is not JSON');
-        }
-      } else {
-        // If response not OK, fall back to original method
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-    } catch (error) {
-      console.warn('Search API not available, falling back to original method:', error);
-      // Fallback to original method if API fails
-      try {
-        const { data, error: supabaseError } = await supabase
-          .from('documents')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('documents')
+        .select(`
+          *,
+          parsed_fields(*)
+        `)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
 
-        if (supabaseError) throw supabaseError;
-        setDocuments(data || []);
-      } catch (supabaseError) {
-        console.error('Error fetching documents:', supabaseError);
-      }
+      if (error) throw error;
+      setDocuments(data || []);
+    } catch (error) {
+      console.error('Error fetching documents:', error);
     } finally {
       setLoading(false);
     }
-  }, [user, searchQuery, searchFilters]);
-
-  // Apply client-side filtering for immediate feedback
-  useEffect(() => {
-    let result = documents.filter(doc => {
-      const matchesSearch = doc.filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        doc.translated_text.toLowerCase().includes(searchQuery.toLowerCase());
-      
-      const matchesStatus = statusFilter === 'all' || doc.processing_status === statusFilter;
-      
-      return matchesSearch && matchesStatus;
-    });
-    
-    setFilteredDocuments(result);
-  }, [documents, searchQuery, statusFilter]);
+  }, [user]);
 
   // Fetch documents on mount and when refreshTrigger changes
   useEffect(() => {
     fetchDocuments();
   }, [fetchDocuments, refreshTrigger]);
 
-  // Poll for document status updates if there are processing documents
+  // Set up real-time subscription for document updates
   useEffect(() => {
-    const processingDocs = documents.filter(doc => doc.processing_status === 'processing');
-    if (processingDocs.length === 0) return;
+    if (!user) return;
 
-    const interval = setInterval(() => {
-      fetchDocuments();
-    }, 5000); // Poll every 5 seconds
+    // Subscribe to document changes
+    const channel = supabase
+      .channel('documents-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'documents',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          console.log('Document updated:', payload);
+          // Refresh the document list when a document is updated
+          fetchDocuments();
+        }
+      )
+      .subscribe();
 
-    return () => clearInterval(interval);
-  }, [documents, fetchDocuments]);
+    setSubscription(channel);
+
+    // Cleanup subscription on unmount
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [user, fetchDocuments]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -176,7 +151,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
       }
 
       const url = URL.createObjectURL(data);
-      const a = window.document.createElement('a'); // Explicitly use window.document
+      const a = window.document.createElement('a');
       a.href = url;
       a.download = document.filename;
       window.document.body.appendChild(a);
@@ -185,20 +160,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error downloading document:', error);
-      // Show user-friendly error message
       alert(`Failed to download document: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  };
-
-  const handleFilterChange = (filterName: string, value: string) => {
-    setSearchFilters(prev => ({
-      ...prev,
-      [filterName]: value
-    }));
-  };
-
-  const handleSearch = () => {
-    fetchDocuments();
   };
 
   const handleRefresh = async () => {
@@ -224,118 +187,40 @@ export const DocumentList: React.FC<DocumentListProps> = ({
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <CardTitle className="flex items-center">
             <span>Your Documents</span>
-            <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
-                <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
-              <Badge variant="secondary">{documents.length} total</Badge>
-            </div>
           </CardTitle>
+          <div className="flex items-center space-x-2">
+            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+              <span className="hidden xs:inline">Refresh</span>
+            </Button>
+            <Badge variant="secondary">{documents.length} total</Badge>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {/* Search and basic filters */}
-            <div className="flex flex-col md:flex-row md:space-x-4 space-y-4 md:space-y-0">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search documents..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">All Status</option>
-                <option value="processing">Processing</option>
-                <option value="completed">Completed</option>
-                <option value="failed">Failed</option>
-              </select>
-              
-              <Button onClick={handleSearch}>
-                <Search className="h-4 w-4 mr-2" />
-                Search
-              </Button>
-            </div>
-
-            {/* Advanced filters */}
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-lg">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Buyer</label>
-                <Input
-                  placeholder="Buyer name"
-                  value={searchFilters.buyer}
-                  onChange={(e) => handleFilterChange('buyer', e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Seller</label>
-                <Input
-                  placeholder="Seller name"
-                  value={searchFilters.seller}
-                  onChange={(e) => handleFilterChange('seller', e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">House No</label>
-                <Input
-                  placeholder="House number"
-                  value={searchFilters.houseNumber}
-                  onChange={(e) => handleFilterChange('houseNumber', e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Survey No</label>
-                <Input
-                  placeholder="Survey number"
-                  value={searchFilters.surveyNumber}
-                  onChange={(e) => handleFilterChange('surveyNumber', e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Document No</label>
-                <Input
-                  placeholder="Document number"
-                  value={searchFilters.documentNumber}
-                  onChange={(e) => handleFilterChange('documentNumber', e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4 mt-6">
-            {filteredDocuments.length === 0 ? (
-              <div className="text-center py-12">
+            {documents.length === 0 ? (
+              <div className="text-center py-8">
                 <FileText className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                 <p className="text-lg font-medium text-gray-900">No documents found</p>
                 <p className="text-sm text-gray-600">
-                  {searchQuery || statusFilter !== 'all' 
-                    ? 'Try adjusting your filters' 
-                    : 'Upload your first Tamil PDF to get started'
-                  }
+                  Upload your first Tamil PDF to get started
                 </p>
               </div>
             ) : (
-              filteredDocuments.map((doc) => (
+              documents.map((doc) => (
                 <Card key={doc.id} className="hover:shadow-md transition-shadow">
                   <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-4 flex-1">
-                        <FileText className="h-8 w-8 text-blue-500" />
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                      <div className="flex items-start space-x-4 flex-1">
+                        <FileText className="h-8 w-8 text-blue-500 flex-shrink-0 mt-1" />
                         <div className="flex-1 min-w-0">
                           <h3 className="text-sm font-medium text-gray-900 truncate">
                             {doc.filename}
                           </h3>
-                          <div className="flex items-center space-x-4 mt-1">
+                          <div className="flex flex-wrap items-center gap-2 mt-2">
                             <div className="flex items-center space-x-1">
                               {getStatusIcon(doc.processing_status)}
                               <Badge className={getStatusColor(doc.processing_status)}>
@@ -363,23 +248,23 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                       </div>
 
                       <div className="flex items-center space-x-2">
-                        {doc.processing_status === 'completed' && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => onDocumentSelect(doc)}
-                          >
-                            <Eye className="h-4 w-4 mr-1" />
-                            View
-                          </Button>
-                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onDocumentSelect(doc)}
+                          className="flex items-center"
+                        >
+                          <Eye className="h-4 w-4 sm:mr-1" />
+                          <span className="hidden sm:inline">View</span>
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => downloadDocument(doc)}
+                          className="flex items-center"
                         >
-                          <Download className="h-4 w-4 mr-1" />
-                          Download
+                          <Download className="h-4 w-4 sm:mr-1" />
+                          <span className="hidden sm:inline">Download</span>
                         </Button>
                       </div>
                     </div>
