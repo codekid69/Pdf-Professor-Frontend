@@ -238,6 +238,7 @@ If you encounter any issues:
 3. Make your changes
 4. Submit a pull request
 
-## License
+## Database Visualization
+<img width="934" height="669" alt="image" src="https://github.com/user-attachments/assets/a531fec0-8422-4621-882f-0562156d0873" />
 
-This project is licensed under the MIT License.
+
